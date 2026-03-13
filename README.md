@@ -102,3 +102,10 @@ pyinstaller --onefile --name subtitle-tool --add-data "app\static;app\static" sc
 ```
 
 > 说明：打包后界面静态文件会一起被带入 EXE，代码里已兼容 PyInstaller 的 `_MEIPASS` 资源路径。
+
+
+## 常见问题：`TypeError: Failed to fetch`
+- 确认后端已启动（默认 `http://127.0.0.1:8000`）。
+- Web 页面里的 **API 地址** 要与后端一致。
+- 如果你是从其它端口访问前端（如 `5500`）或 `file://` 打开页面，请把 API 地址改成后端地址。
+- 当前后端已启用 CORS 放行，跨域场景可直接调用。

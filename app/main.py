@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.models import Job
 from app.pipeline import JobPipeline
@@ -19,6 +20,14 @@ pipeline = JobPipeline(store)
 worker = JobWorker(pipeline)
 
 app = FastAPI(title="Subtitle Extractor & Translator MVP")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _ui_html_path() -> Path:

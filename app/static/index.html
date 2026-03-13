@@ -7,12 +7,12 @@
     <style>
       :root { color-scheme: light dark; }
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }
-      .wrap { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+      .wrap { max-width: 960px; margin: 32px auto; padding: 0 16px; }
       .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 6px 24px rgba(0,0,0,.08); margin-bottom: 16px; }
       h1 { margin-top: 0; font-size: 24px; }
       .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
       label { display: block; font-size: 14px; margin-bottom: 6px; }
-      input, select, button { padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+      input, button { padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
       button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
       button:disabled { opacity: .6; cursor: not-allowed; }
       .muted { color: #6b7280; font-size: 13px; }
@@ -21,6 +21,7 @@
       .err { color: #dc2626; }
       .links a { margin-right: 12px; }
       .log { background: #111827; color: #d1d5db; padding: 12px; border-radius: 8px; min-height: 84px; white-space: pre-wrap; }
+      .grow { min-width: 320px; flex: 1; }
     </style>
   </head>
   <body>
@@ -29,6 +30,12 @@
         <h1>🎬 字幕提取与翻译</h1>
         <p class="muted">上传音视频文件，自动生成原文、译文和双语字幕（SRT）。</p>
         <form id="jobForm">
+          <div class="row">
+            <div class="grow">
+              <label for="apiBase">API 地址（解决 Failed to fetch）</label>
+              <input id="apiBase" class="grow" />
+            </div>
+          </div>
           <div class="row">
             <div>
               <label for="file">文件</label>
@@ -70,14 +77,30 @@
       const jobIdEl = document.getElementById('jobId');
       const linksEl = document.getElementById('links');
       const logEl = document.getElementById('log');
+      const apiBaseInput = document.getElementById('apiBase');
 
       let pollTimer = null;
+
+      const defaultApiBase = location.protocol === 'file:'
+        ? 'http://127.0.0.1:8000'
+        : location.origin;
+      apiBaseInput.value = localStorage.getItem('apiBase') || defaultApiBase;
+
+      function apiUrl(path) {
+        const base = (apiBaseInput.value || defaultApiBase).replace(/\/$/, '');
+        return `${base}${path}`;
+      }
 
       function log(msg) {
         const now = new Date().toLocaleTimeString();
         logEl.textContent += `[${now}] ${msg}\n`;
         logEl.scrollTop = logEl.scrollHeight;
       }
+
+      apiBaseInput.addEventListener('change', () => {
+        localStorage.setItem('apiBase', apiBaseInput.value.trim());
+        log(`API 地址已更新：${apiBaseInput.value.trim()}`);
+      });
 
       function setStatus(value) {
         statusEl.textContent = value;
@@ -88,7 +111,7 @@
         linksEl.innerHTML = '';
         ['original.srt', 'translated.srt', 'bilingual.srt'].forEach((name) => {
           const a = document.createElement('a');
-          a.href = `/jobs/${jobId}/artifacts/${name}`;
+          a.href = apiUrl(`/jobs/${jobId}/artifacts/${name}`);
           a.textContent = `下载 ${name}`;
           a.target = '_blank';
           linksEl.appendChild(a);
@@ -99,7 +122,7 @@
         if (pollTimer) clearInterval(pollTimer);
 
         const tick = async () => {
-          const res = await fetch(`/jobs/${jobId}`);
+          const res = await fetch(apiUrl(`/jobs/${jobId}`));
           const data = await res.json();
           setStatus(data.status);
           errorEl.textContent = data.error || '-';
@@ -144,7 +167,9 @@
         log(`上传文件：${file.name}`);
 
         try {
-          const res = await fetch('/jobs', { method: 'POST', body });
+          const url = apiUrl('/jobs');
+          log(`提交地址：${url}`);
+          const res = await fetch(url, { method: 'POST', body });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           jobIdEl.textContent = data.id;
@@ -155,7 +180,7 @@
           submitBtn.disabled = false;
           setStatus('failed');
           errorEl.textContent = String(err);
-          log(`提交失败：${err}`);
+          log(`提交失败（Failed to fetch 常见原因：API地址不对、服务未启动、跨域未放行）：${err}`);
         }
       });
     </script>
