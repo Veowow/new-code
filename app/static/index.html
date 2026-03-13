@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>字幕提取与翻译工具</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }
+      .wrap { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+      .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 6px 24px rgba(0,0,0,.08); margin-bottom: 16px; }
+      h1 { margin-top: 0; font-size: 24px; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      label { display: block; font-size: 14px; margin-bottom: 6px; }
+      input, select, button { padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+      button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
+      button:disabled { opacity: .6; cursor: not-allowed; }
+      .muted { color: #6b7280; font-size: 13px; }
+      .status { font-weight: 600; }
+      .ok { color: #059669; }
+      .err { color: #dc2626; }
+      .links a { margin-right: 12px; }
+      .log { background: #111827; color: #d1d5db; padding: 12px; border-radius: 8px; min-height: 84px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>🎬 字幕提取与翻译</h1>
+        <p class="muted">上传音视频文件，自动生成原文、译文和双语字幕（SRT）。</p>
+        <form id="jobForm">
+          <div class="row">
+            <div>
+              <label for="file">文件</label>
+              <input id="file" type="file" name="file" required />
+            </div>
+            <div>
+              <label for="source">源语言</label>
+              <input id="source" name="source_lang" value="auto" />
+            </div>
+            <div>
+              <label for="target">目标语言</label>
+              <input id="target" name="target_lang" value="zh-CN" />
+            </div>
+            <div>
+              <button id="submitBtn" type="submit">开始处理</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div>任务ID：<code id="jobId">-</code></div>
+        <div>状态：<span id="status" class="status">idle</span></div>
+        <div>错误：<span id="error" class="err">-</span></div>
+        <div class="links" id="links"></div>
+      </div>
+
+      <div class="card">
+        <strong>运行日志</strong>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('jobForm');
+      const submitBtn = document.getElementById('submitBtn');
+      const statusEl = document.getElementById('status');
+      const errorEl = document.getElementById('error');
+      const jobIdEl = document.getElementById('jobId');
+      const linksEl = document.getElementById('links');
+      const logEl = document.getElementById('log');
+
+      let pollTimer = null;
+
+      function log(msg) {
+        const now = new Date().toLocaleTimeString();
+        logEl.textContent += `[${now}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function setStatus(value) {
+        statusEl.textContent = value;
+        statusEl.className = `status ${value === 'done' ? 'ok' : value === 'failed' ? 'err' : ''}`;
+      }
+
+      function renderLinks(jobId) {
+        linksEl.innerHTML = '';
+        ['original.srt', 'translated.srt', 'bilingual.srt'].forEach((name) => {
+          const a = document.createElement('a');
+          a.href = `/jobs/${jobId}/artifacts/${name}`;
+          a.textContent = `下载 ${name}`;
+          a.target = '_blank';
+          linksEl.appendChild(a);
+        });
+      }
+
+      async function pollJob(jobId) {
+        if (pollTimer) clearInterval(pollTimer);
+
+        const tick = async () => {
+          const res = await fetch(`/jobs/${jobId}`);
+          const data = await res.json();
+          setStatus(data.status);
+          errorEl.textContent = data.error || '-';
+          log(`任务状态：${data.status}`);
+          if (data.status === 'done') {
+            renderLinks(jobId);
+            clearInterval(pollTimer);
+            submitBtn.disabled = false;
+            log('任务完成，可下载字幕文件。');
+          }
+          if (data.status === 'failed') {
+            clearInterval(pollTimer);
+            submitBtn.disabled = false;
+            log(`任务失败：${data.error}`);
+          }
+        };
+
+        await tick();
+        pollTimer = setInterval(tick, 1500);
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const file = document.getElementById('file').files[0];
+        const sourceLang = document.getElementById('source').value || 'auto';
+        const targetLang = document.getElementById('target').value || 'zh-CN';
+
+        if (!file) {
+          log('请选择要上传的文件。');
+          return;
+        }
+
+        const body = new FormData();
+        body.append('file', file);
+        body.append('source_lang', sourceLang);
+        body.append('target_lang', targetLang);
+
+        submitBtn.disabled = true;
+        linksEl.innerHTML = '';
+        errorEl.textContent = '-';
+        setStatus('queued');
+        log(`上传文件：${file.name}`);
+
+        try {
+          const res = await fetch('/jobs', { method: 'POST', body });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          jobIdEl.textContent = data.id;
+          setStatus(data.status);
+          log(`任务已创建：${data.id}`);
+          pollJob(data.id);
+        } catch (err) {
+          submitBtn.disabled = false;
+          setStatus('failed');
+          errorEl.textContent = String(err);
+          log(`提交失败：${err}`);
+        }
+      });
+    </script>
+  </body>
+</html>
